@@ -1,0 +1,41 @@
+﻿
+> sipwar@0.1.0 build
+> next build
+
+Γû▓ Next.js 16.2.2 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+Γ£ô Compiled successfully in 9.9s
+  Running TypeScript ...
+node.exe : Failed to type check.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program 
+Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Failed 
+to     type check.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+./src/app/api/user/wishlist/route.ts:25:28
+Type error: Property 'name' does not exist on type 
+'ObjectId'.
+
+  [90m23 |[0m     [36mconst[0m 
+formattedWishlist = wishlist.items.map((item) => ({
+  [90m24 |[0m       productId: item.productId._id 
+? item.productId._id.toString() : item.productId,
+[31m[1m>[0m [90m25 |[0m       name: 
+item.productId.name || [32m"Unknown Product"[0m,
+  [90m   |[0m                            
+[31m[1m^[0m
+  [90m26 |[0m       price: item.productId.price 
+|| [35m0[0m,
+  [90m27 |[0m       image: 
+item.productId.images?.[[35m0[0m] || 
+item.productId.image || [32m""[0m,
+  [90m28 |[0m       addedAt: item.addedAt,
+Next.js build worker exited with code: 1 and 
+signal: null

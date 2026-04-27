@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     // 2. Update Database
     await dbConnect();
     const OrderModel = getOrderModel();
-    await OrderModel.findByIdAndUpdate(dbOrderId, {
+    await (OrderModel as any).findByIdAndUpdate(dbOrderId, {
       paymentStatus: "paid",
       status: "confirmed",
       razorpayPaymentId: razorpay_payment_id,

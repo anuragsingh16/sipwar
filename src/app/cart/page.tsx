@@ -2,13 +2,25 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Minus, Plus, Trash2, ArrowRight, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/lib/store/cartStore";
+import { useSession } from "next-auth/react";
 
 export default function CartPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
   const { items, updateQuantity, removeItem, getTotals } = useCartStore();
   const { subtotal, total, itemCount } = getTotals();
+
+  const handleCheckout = () => {
+    if (!session) {
+      router.push("/login?redirect=/checkout");
+    } else {
+      router.push("/checkout");
+    }
+  };
 
   if (items.length === 0) {
     return (
@@ -111,12 +123,13 @@ export default function CartPage() {
                 </div>
               )}
 
-              <Link href="/checkout" className="block w-full">
-                <Button className="w-full bg-coffee-800 hover:bg-coffee-900 text-white py-8 text-xl font-bold rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all group flex justify-between items-center px-8">
-                  <span>Checkout</span>
-                  <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              </Link>
+              <Button
+                onClick={handleCheckout}
+                className="w-full bg-coffee-800 hover:bg-coffee-900 text-white py-8 text-xl font-bold rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all group flex justify-between items-center px-8"
+              >
+                <span>{session ? "Checkout" : "Sign In to Checkout"}</span>
+                <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+              </Button>
               
               <div className="mt-8">
                 <p className="text-center text-sm font-medium text-gray-500 flex items-center justify-center gap-2">

@@ -181,17 +181,17 @@ export default function AdminDashboard() {
       {/* Sidebar */}
       <aside className="w-64 bg-[#1a0e0a] text-white flex-col hidden md:flex min-h-screen">
         <div className="p-8 border-b border-white/10">
-          <Link href="/" className="block">
+          <div>
             <h2 className="text-2xl font-serif font-bold text-[#cfb53b]">Sipwar</h2>
             <p className="text-[#8b6a4a] text-xs mt-1 tracking-widest uppercase">Admin Portal</p>
-          </Link>
+          </div>
         </div>
         <nav className="flex-1 px-4 py-6 space-y-2">
           {[
-            { label: "Overview", icon: LayoutDashboard, href: "/admin", active: true },
-            { label: "Orders",   icon: ShoppingCart,    href: "/admin/orders" },
-            { label: "Products", icon: Package,         href: "/admin" },
-            { label: "Customers",icon: Users,           href: "/admin" },
+            { label: "Overview",  icon: LayoutDashboard, href: "/admin",            active: true },
+            { label: "Orders",    icon: ShoppingCart,    href: "/admin/orders" },
+            { label: "Customers", icon: Users,           href: "/admin/customers" },
+            { label: "Products",  icon: Package,         href: "/admin/products" },
           ].map(({ label, icon: Icon, href, active }) => (
             <Link key={label} href={href}
               className={`px-4 py-3 rounded-xl font-medium flex items-center gap-3 transition-colors ${active ? "bg-[#3b2314] text-white" : "text-[#8b6a4a] hover:bg-[#3b2314]/60 hover:text-white"}`}

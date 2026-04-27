@@ -1,21 +1,26 @@
-"use client"; // Code Version 5.1 - Fixed bcrypt imports
+"use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCartStore } from "@/lib/store/cartStore";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Truck, ShieldAlert } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { ShieldCheck, Truck, ShieldAlert, Lock, LogIn } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const { items, getTotals, clearCart } = useCartStore();
   const { subtotal } = getTotals();
-  const total = subtotal + (subtotal < 500 ? 50 : 0);
-  
+  const shipping = subtotal < 500 ? 50 : 0;
+  const total = subtotal + shipping;
+
   const [loading, setLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
   const [address, setAddress] = useState({
     fullName: "",
     phone: "",
@@ -25,126 +30,159 @@ export default function CheckoutPage() {
     pincode: "",
   });
 
+  // Pre-fill name from session
+  useEffect(() => {
+    if (session?.user?.name && !address.fullName) {
+      setAddress((prev) => ({ ...prev, fullName: session.user!.name! }));
+    }
+  }, [session]);
+
+  // Read error from URL (e.g. payment_failed redirect back)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error");
+    if (err === "payment_failed") setPaymentError("Payment was not completed. Please try again.");
+    if (err === "signature_mismatch") setPaymentError("Payment verification failed. Please contact support.");
+  }, []);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setAddress({ ...address, [e.target.id]: e.target.value });
-  };
-
-  const loadRazorpay = async () => {
-    return new Promise((resolve) => {
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.onload = () => {
-        resolve(true);
-      };
-      script.onerror = () => {
-        resolve(false);
-      };
-      document.body.appendChild(script);
-    });
   };
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setPaymentError("");
 
     try {
-      const rzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-      if (!rzpKey) {
-        throw new Error("Razorpay Key ID missing. Add NEXT_PUBLIC_RAZORPAY_KEY_ID to Vercel.");
-      }
-
-      // 1. Load Razorpay SDK
-      const sdkLoaded = await loadRazorpay();
-      if (!sdkLoaded) throw new Error("Failed to load Razorpay SDK.");
-
-      // 2. Create Order
+      // 1. Create Razorpay order on backend
       const res = await fetch("/api/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: total * 100, // paise
-          items,
-          address,
-          totalAmount: total
-        }),
+        body: JSON.stringify({ items, address, totalAmount: total }),
       });
 
       const orderData = await res.json();
       if (!res.ok) throw new Error(orderData.error || "Failed to create order.");
 
-      // 3. Configure Checkout Options
-      const options = {
-        key: rzpKey,
-        amount: orderData.amount,
-        currency: orderData.currency,
-        name: "Sipwar Coffee",
-        description: "Premium Coffee Order",
-        order_id: orderData.order_id,
-        handler: async function (response: any) {
-          try {
-            // 4. Verify Payment
-            const verifyRes = await fetch("/api/verify-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-                dbOrderId: orderData.dbOrderId
-              }),
-            });
+      // 2. Clear cart immediately (payment is tracked by Razorpay order)
+      clearCart();
 
-            const verifyData = await verifyRes.json();
-            if (verifyData.success) {
-              clearCart();
-              router.push(`/order-success?orderId=${orderData.dbOrderId}&amount=${total}`);
-            } else {
-              alert("Payment verification failed. Please contact support.");
-            }
-          } catch (err) {
-            console.error("Verification error:", err);
-            alert("An error occurred during payment verification.");
-          }
-        },
-        prefill: {
-          name: address.fullName,
-          contact: address.phone,
-        },
-        theme: { color: "#3b2314" },
-        modal: {
-          ondismiss: () => setLoading(false)
-        }
+      // 3. Redirect to Razorpay hosted checkout page
+      //    Build the form and submit it — Razorpay accepts POST redirect
+      const rzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!;
+
+      // Callback URL — Razorpay redirects browser here after payment
+      const callbackUrl = encodeURIComponent(
+        `${window.location.origin}/api/razorpay-callback?dbOrderId=${orderData.dbOrderId}&amount=${total}`
+      );
+
+      // Razorpay hosted checkout URL
+      const redirectUrl = `https://api.razorpay.com/v1/checkout/embedded`;
+
+      // Build a hidden form and submit it
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = redirectUrl;
+
+      const fields: Record<string, string> = {
+        key_id:                rzpKey,
+        order_id:              orderData.order_id,
+        amount:                String(orderData.amount),
+        currency:              orderData.currency || "INR",
+        name:                  "Sipwar Coffee",
+        description:           "Premium Coffee Order",
+        prefill_name:          address.fullName,
+        prefill_contact:       address.phone,
+        "prefill[name]":       address.fullName,
+        "prefill[contact]":    address.phone,
+        callback_url:          decodeURIComponent(callbackUrl),
+        cancel_url:            `${window.location.origin}/checkout?error=payment_failed`,
       };
 
-      const rzp = new (window as any).Razorpay(options);
-      rzp.on('payment.failed', (resp: any) => {
-        alert("Payment Failed: " + resp.error.description);
+      Object.entries(fields).forEach(([k, v]) => {
+        const input = document.createElement("input");
+        input.type  = "hidden";
+        input.name  = k;
+        input.value = v;
+        form.appendChild(input);
       });
-      rzp.open();
+
+      document.body.appendChild(form);
+      form.submit();
 
     } catch (err: any) {
       console.error("Checkout Error:", err);
-      alert(err.message || "Failed to initialize payment.");
-    } finally {
+      setPaymentError(err.message || "Failed to initialize payment. Please try again.");
       setLoading(false);
     }
   };
 
+  // ── Empty cart ──────────────────────────────────────────────────────────
   if (items.length === 0) {
     return (
-       <div className="min-h-[70vh] flex flex-col items-center justify-center p-4 bg-white">
+      <div className="min-h-[70vh] flex flex-col items-center justify-center p-4 bg-white">
         <h2 className="text-3xl font-serif text-coffee-900 mb-8 font-bold">Your cart is empty</h2>
-        <Button onClick={() => router.push("/products")} className="px-8 py-6 rounded-xl text-lg bg-coffee-800 hover:bg-coffee-900">Back to Shop</Button>
+        <Button onClick={() => router.push("/products")} className="px-8 py-6 rounded-xl text-lg bg-coffee-800 hover:bg-coffee-900">
+          Back to Shop
+        </Button>
       </div>
     );
   }
 
+  // ── Auth gate — must be logged in ─────────────────────────────────────────
+  if (status === "unauthenticated") {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 bg-[#fff5f5]">
+        <div className="w-full max-w-md bg-white rounded-3xl border border-coffee-100 shadow-lg p-10 text-center">
+          <div className="w-20 h-20 bg-coffee-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-coffee-100">
+            <Lock className="w-9 h-9 text-coffee-700" />
+          </div>
+          <h2 className="text-3xl font-serif font-bold text-coffee-900 mb-3">Sign in to Checkout</h2>
+          <p className="text-coffee-600 mb-8 leading-relaxed">
+            You need to be logged in to place an order. Your cart is saved and will be waiting for you.
+          </p>
+          <div className="flex flex-col gap-3">
+            <Link
+              href="/login?redirect=/checkout"
+              className="flex items-center justify-center gap-2 bg-coffee-800 hover:bg-coffee-900 text-white font-bold px-6 py-4 rounded-2xl transition-all"
+            >
+              <LogIn className="w-5 h-5" /> Sign In
+            </Link>
+            <Link
+              href="/signup?redirect=/checkout"
+              className="flex items-center justify-center gap-2 border-2 border-coffee-200 hover:border-coffee-400 text-coffee-800 font-bold px-6 py-4 rounded-2xl transition-all"
+            >
+              Create Account
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Loading session ───────────────────────────────────────────────────────
+  if (status === "loading") {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center bg-[#fff5f5]">
+        <div className="w-10 h-10 border-4 border-coffee-200 border-t-coffee-800 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // ── Main checkout form ────────────────────────────────────────────────────
   return (
     <div className="bg-[#fff5f5] min-h-screen py-12 md:py-20">
       <div className="container mx-auto px-4 max-w-6xl">
-        <div className="bg-red-600 text-white p-2 text-center text-xs font-bold mb-4 rounded italic">RAZORPAY_ENGINE_V6_ACTIVE</div>
         <h1 className="text-4xl md:text-[3rem] font-serif text-coffee-900 font-bold mb-12">Checkout</h1>
-        
+
+        {paymentError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl flex gap-3 items-center">
+            <ShieldAlert className="w-5 h-5 shrink-0" />
+            <p className="text-sm font-medium">{paymentError}</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16">
           {/* Checkout Form */}
           <div className="lg:col-span-7">
@@ -181,30 +219,36 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              <div className="mt-8 p-4 bg-green-50 border border-green-200 rounded-xl flex gap-3 text-green-800">
+              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl flex gap-3 text-green-800">
                 <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" />
-                <p className="text-sm font-medium leading-relaxed">Your data is handled securely. We never store your full payment details on our servers.</p>
+                <p className="text-sm font-medium leading-relaxed">
+                  You'll be redirected to Razorpay's secure payment page. We never see your card details.
+                </p>
               </div>
             </form>
           </div>
 
-          {/* Order Summary Checkout side */}
+          {/* Order Summary */}
           <div className="lg:col-span-5">
             <div className="bg-coffee-50/50 p-8 rounded-3xl border border-coffee-100 shadow-sm sticky top-[120px]">
               <h3 className="text-2xl font-serif font-bold text-coffee-900 mb-6">Order Summary</h3>
-              
+
               <div className="space-y-4 max-h-[350px] overflow-y-auto mb-8 pr-2 custom-scrollbar">
                 {items.map(item => (
-                   <div key={item.id} className="flex gap-4">
-                     <div className="w-16 h-16 bg-coffee-50 rounded-xl border border-coffee-200 flex-shrink-0 shadow-sm relative overflow-hidden">
-                       {item.image && <Image src={item.image} alt={item.name} fill className="object-cover" sizes="64px" />}
-                     </div>
-                     <div className="flex-1">
-                       <h4 className="font-semibold text-coffee-900 text-sm line-clamp-1">{item.name}</h4>
-                       <div className="text-xs text-gray-500 mt-1 font-medium pb-1">Qty: {item.quantity} {item.weight && `| ${item.weight}`}</div>
-                       <div className="font-mono font-bold text-coffee-900 text-sm">₹{(item.price * item.quantity).toLocaleString('en-IN')}</div>
-                     </div>
-                   </div>
+                  <div key={item.id} className="flex gap-4">
+                    <div className="w-16 h-16 bg-coffee-50 rounded-xl border border-coffee-200 flex-shrink-0 shadow-sm relative overflow-hidden">
+                      {item.image && <Image src={item.image} alt={item.name} fill className="object-cover" sizes="64px" />}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-coffee-900 text-sm line-clamp-1">{item.name}</h4>
+                      <div className="text-xs text-gray-500 mt-1 font-medium pb-1">
+                        Qty: {item.quantity} {item.weight && `| ${item.weight}`}
+                      </div>
+                      <div className="font-mono font-bold text-coffee-900 text-sm">
+                        ₹{(item.price * item.quantity).toLocaleString("en-IN")}
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
 
@@ -213,30 +257,41 @@ export default function CheckoutPage() {
               <div className="space-y-4 text-coffee-900 mb-8">
                 <div className="flex justify-between font-medium text-lg">
                   <span>Subtotal</span>
-                  <span className="font-mono">₹{subtotal.toLocaleString('en-IN')}</span>
+                  <span className="font-mono">₹{subtotal.toLocaleString("en-IN")}</span>
                 </div>
                 <div className="flex justify-between font-medium text-lg">
                   <span>Shipping</span>
-                  {subtotal >= 500 ? (
-                     <span className="text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded text-sm">Free</span>
+                  {shipping === 0 ? (
+                    <span className="text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded text-sm">Free</span>
                   ) : (
-                     <span className="font-mono">₹50</span>
+                    <span className="font-mono">₹{shipping}</span>
                   )}
                 </div>
                 <hr className="border-coffee-200 my-4" />
                 <div className="flex justify-between font-bold text-2xl text-coffee-900 pt-2">
                   <span>Total</span>
-                  <span className="font-mono">₹{total.toLocaleString('en-IN')}</span>
+                  <span className="font-mono">₹{total.toLocaleString("en-IN")}</span>
                 </div>
               </div>
 
-              <Button type="submit" form="checkout-form" disabled={loading} className="w-full bg-red-600 hover:bg-red-700 text-white py-8 text-xl font-bold rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all">
-                {loading ? "Processing..." : `SECURE PAYMENT: ₹${total.toLocaleString('en-IN')}`}
+              <Button
+                type="submit"
+                form="checkout-form"
+                disabled={loading}
+                className="w-full bg-[#3b2314] hover:bg-[#5c3420] text-white py-8 text-xl font-bold rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all"
+              >
+                {loading
+                  ? "Redirecting to Payment..."
+                  : `Pay ₹${total.toLocaleString("en-IN")} →`}
               </Button>
-              
+
               <div className="grid grid-cols-2 gap-4 mt-6">
-                <div className="flex items-center gap-2 justify-center text-xs font-medium text-coffee-800"><Truck className="w-4 h-4" /> Free shipping ₹500+</div>
-                <div className="flex items-center gap-2 justify-center text-xs font-medium text-coffee-800"><ShieldCheck className="w-4 h-4" /> Secure Payment</div>
+                <div className="flex items-center gap-2 justify-center text-xs font-medium text-coffee-800">
+                  <Truck className="w-4 h-4" /> Free shipping ₹500+
+                </div>
+                <div className="flex items-center gap-2 justify-center text-xs font-medium text-coffee-800">
+                  <ShieldCheck className="w-4 h-4" /> Razorpay Secured
+                </div>
               </div>
             </div>
           </div>

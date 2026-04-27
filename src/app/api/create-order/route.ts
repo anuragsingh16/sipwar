@@ -1,6 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import Razorpay from "razorpay";
 import dbConnect from "@/lib/db/mongodb";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import User from "@/lib/models/User";
 import mongoose from "mongoose";
 
 function getOrderModel() {
@@ -9,52 +12,96 @@ function getOrderModel() {
   return mongoose.model("Order", schema);
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { amount, currency = "INR", receipt, items, address, totalAmount } = await req.json();
+    // ── Auth check ──────────────────────────────────────────────────────────
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: "You must be logged in to place an order." },
+        { status: 401 }
+      );
+    }
+    const userId = (session.user as { id?: string }).id || null;
 
-    // 1. Validation
-    if (!amount || amount < 100) {
-      return NextResponse.json({ error: "Minimum amount is 100 paise (₹1)" }, { status: 400 });
+    // ── Parse body ──────────────────────────────────────────────────────────
+    const { items, address, totalAmount } = await req.json();
+
+    if (!items?.length || !address || !totalAmount) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // 2. Initialize Razorpay
+    const amountPaise = Math.round(totalAmount * 100);
+    if (amountPaise < 100) {
+      return NextResponse.json({ error: "Minimum order amount is ₹1" }, { status: 400 });
+    }
+
+    // ── Create Razorpay order ────────────────────────────────────────────────
     const razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID!,
+      key_id:     process.env.RAZORPAY_KEY_ID!,
       key_secret: process.env.RAZORPAY_KEY_SECRET!,
     });
 
-    // 3. Create Razorpay Order
     const rzpOrder = await razorpay.orders.create({
-      amount: Math.round(amount),
-      currency,
-      receipt: receipt || `rcpt_${Date.now()}`,
+      amount:   amountPaise,
+      currency: "INR",
+      receipt:  `rcpt_${Date.now()}`,
     });
 
-    // 4. Save Pending Order to Database
+    // ── Save pending order to MongoDB ────────────────────────────────────────
     await dbConnect();
     const OrderModel = getOrderModel();
+
     const dbOrder = await OrderModel.create({
-      items,
-      shippingAddress: address,
-      total: totalAmount || (amount / 100),
-      paymentMethod: "razorpay",
-      paymentStatus: "pending",
-      status: "pending",
-      razorpayOrderId: rzpOrder.id,
-      orderNumber: `ORD-${Date.now()}`,
+      userId,
+      items: items.map((i: any) => ({
+        productId: i.productId || i.id,
+        name:      i.name,
+        price:     i.price,
+        quantity:  i.quantity,
+        weight:    i.weight,
+        grind:     i.grind,
+        image:     i.image,
+        subtotal:  i.price * i.quantity,
+      })),
+      shippingAddress:  address,
+      total:            totalAmount,
+      totalAmount,
+      subtotal:         totalAmount,
+      paymentMethod:    "razorpay",
+      paymentStatus:    "pending",
+      status:           "pending",
+      orderStatus:      "pending",
+      razorpayOrderId:  rzpOrder.id,
+      orderNumber:      `ORD-${Date.now()}`,
     });
 
-    // 5. Return success to frontend
+    // ── Award Brew Points (1 pt per ₹100 spent) ──────────────────────────────
+    if (userId) {
+      try {
+        const pointsEarned = Math.floor(totalAmount / 100);
+        if (pointsEarned > 0) {
+          await User.findByIdAndUpdate(userId, { $inc: { loyaltyPoints: pointsEarned } });
+        }
+      } catch (pointsErr) {
+        console.error("Failed to update brew points:", pointsErr);
+      }
+    }
+
+    // ── Respond ──────────────────────────────────────────────────────────────
     return NextResponse.json({
-      order_id: rzpOrder.id,
-      amount: rzpOrder.amount,
-      currency: rzpOrder.currency,
-      dbOrderId: dbOrder._id,
+      order_id:    rzpOrder.id,
+      amount:      rzpOrder.amount,
+      currency:    rzpOrder.currency,
+      dbOrderId:   dbOrder._id.toString(),
       orderNumber: dbOrder.orderNumber,
     });
+
   } catch (error: any) {
-    console.error("Razorpay Create Order Error:", error);
-    return NextResponse.json({ error: error.message || "Failed to create order" }, { status: 500 });
+    console.error("[create-order] Error:", error);
+    return NextResponse.json(
+      { error: error.message || "Failed to create order" },
+      { status: 500 }
+    );
   }
 }

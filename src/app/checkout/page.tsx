@@ -1,4 +1,4 @@
-"use client";
+"use client"; // Code Version 5.1 - Fixed bcrypt imports
 
 import { useState } from "react";
 import { useCartStore } from "@/lib/store/cartStore";

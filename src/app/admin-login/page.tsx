@@ -31,7 +31,8 @@ export default function AdminLoginPage() {
     }
 
     // After signIn succeeds, check if user is admin via session
-    const sessionRes = await fetch("/api/auth/session");
+    // Retrieve a fresh, un-cached session instead of risking Next.js' fetch cache
+    const sessionRes = await fetch(`/api/auth/session?v=${Date.now()}`);
     const session = await sessionRes.json();
 
     if (session?.user?.role !== "admin") {

@@ -1,7 +1,7 @@
 import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import User from "@/lib/models/User";
 import dbConnect from "@/lib/db/mongodb";
 import { DefaultSession } from "next-auth";
@@ -55,8 +55,13 @@ export const authOptions: NextAuthOptions = {
         
         if (!user.isActive) throw new Error("Account deactivated");
         
-        user.lastLogin = new Date();
-        await user.save();
+        // Only update lastLogin if we aren't in a strict serverless environment that might timeout
+        try {
+            (user as any).lastLogin = new Date();
+            await (user as any).save();
+        } catch (e) {
+            console.error("Failed to update lastLogin:", e);
+        }
         
         return {
           id: user._id.toString(),

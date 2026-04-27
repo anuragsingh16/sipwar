@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Shield, ArrowRight } from "lucide-react";
 
@@ -32,8 +32,7 @@ export default function AdminLoginPage() {
 
     // After signIn succeeds, check if user is admin via session
     // Retrieve a fresh, un-cached session instead of risking Next.js' fetch cache
-    const sessionRes = await fetch(`/api/auth/session?v=${Date.now()}`);
-    const session = await sessionRes.json();
+    const session = await getSession();
 
     if (session?.user?.role !== "admin") {
       setError("Access denied. This login is for administrators only.");

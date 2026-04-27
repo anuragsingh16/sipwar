@@ -25,7 +25,7 @@ export default function AdminLoginPage() {
     });
 
     if (res?.error) {
-      setError("Invalid credentials. Admin access denied.");
+      setError(`Auth Error: ${res.error}. (Please check Vercel Env Variables)`);
       setLoading(false);
       return;
     }

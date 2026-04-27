@@ -48,19 +48,21 @@ export default function CheckoutPage() {
     setLoading(true);
 
     try {
-      // 1. Ensure keys exist in frontend
+      // DEBUG POINT 1
+      console.log("Checkout Initiated - Version 5.0");
+
       const rzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
       if (!rzpKey) {
-        throw new Error("Razorpay Key ID is missing! Update Vercel settings and REDEPLOY.");
+        alert("CRITICAL ERROR: Razorpay Key ID is missing (undefined)!");
+        throw new Error("Razorpay Key ID is missing!");
       }
 
-      // 2. Load SDK
       const sdkLoaded = await loadRazorpay();
       if (!sdkLoaded) {
+          alert("CRITICAL ERROR: Razorpay SDK failed to load!");
           throw new Error("Razorpay SDK could not be loaded.");
       }
 
-      // 3. Create Order
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,23 +76,24 @@ export default function CheckoutPage() {
 
       const orderData = await response.json();
       if (!response.ok) {
+          alert("SERVER ERROR: " + (orderData.error || "Order creation failed"));
           throw new Error(orderData.error || "Failed to create order on server.");
       }
 
-      // 4. Verification Check: Stop if server didn't generate a real Razorpay ID
       if (!orderData.id || orderData.id.startsWith("COD-")) {
-          throw new Error("Server failed to generate a Razorpay Order. Check your RAZORPAY_KEY_SECRET on Vercel.");
+          alert("DATABASE ERROR: Server returned a non-Razorpay ID: " + orderData.id);
+          throw new Error("Server failed to generate a Razorpay Order.");
       }
 
-      // 5. Open Razorpay
       const options = {
         key: rzpKey,
         amount: orderData.amount,
         currency: orderData.currency,
         name: "Sipwar Coffee",
-        description: "Premium Coffee Purchase",
+        description: "Order #" + orderData.orderNumber,
         order_id: orderData.id,
         handler: async function (rzpRes: any) {
+          alert("PAYMENT RECEIVED! Now verifying...");
           try {
             const verifyRes = await fetch("/api/orders/verify", {
                method: "POST",
@@ -104,13 +107,14 @@ export default function CheckoutPage() {
             });
             const verifyData = await verifyRes.json();
             if (verifyData.success) {
+              alert("VERIFICATION SUCCESS! Redirecting...");
               clearCart();
               router.push(`/order-success?orderId=${orderData.dbOrderId}&amount=${total}`);
             } else {
-              alert("Payment verification failed! Order not confirmed.");
+              alert("VERIFICATION FAILED! " + verifyData.error);
             }
           } catch (vErr) {
-            alert("Payment verification server error.");
+            alert("VERIFICATION SERVER CRASH!");
           }
         },
         prefill: {
@@ -119,16 +123,20 @@ export default function CheckoutPage() {
         },
         theme: { color: "#3b2314" },
         modal: {
-          ondismiss: () => setLoading(false)
+          ondismiss: () => {
+            alert("Payment Modal Closed by User");
+            setLoading(false);
+          }
         }
       };
 
+      alert("READY! Opening Razorpay Modal now...");
       const rzp = new (window as any).Razorpay(options);
       rzp.open();
 
     } catch (err: any) {
       console.error("Payment Step Error:", err);
-      alert(err.message || "An unexpected error occurred during checkout.");
+      alert("CATCH BLOCK ERROR: " + err.message);
     } finally {
       setLoading(false);
     }

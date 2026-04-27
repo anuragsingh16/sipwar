@@ -140,8 +140,9 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="bg-white min-h-screen py-12 md:py-20">
+    <div className="bg-[#fff5f5] min-h-screen py-12 md:py-20">
       <div className="container mx-auto px-4 max-w-6xl">
+        <div className="bg-red-600 text-white p-2 text-center text-xs font-bold mb-4 rounded italic">RAZORPAY_ENGINE_V6_ACTIVE</div>
         <h1 className="text-4xl md:text-[3rem] font-serif text-coffee-900 font-bold mb-12">Checkout</h1>
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16">
@@ -229,8 +230,8 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              <Button type="submit" form="checkout-form" disabled={loading} className="w-full bg-coffee-800 hover:bg-coffee-900 text-white py-8 text-xl font-bold rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all">
-                {loading ? "Processing..." : `Pay ₹${total.toLocaleString('en-IN')}`}
+              <Button type="submit" form="checkout-form" disabled={loading} className="w-full bg-red-600 hover:bg-red-700 text-white py-8 text-xl font-bold rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all">
+                {loading ? "Processing..." : `SECURE PAYMENT: ₹${total.toLocaleString('en-IN')}`}
               </Button>
               
               <div className="grid grid-cols-2 gap-4 mt-6">

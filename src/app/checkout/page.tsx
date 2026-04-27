@@ -48,73 +48,62 @@ export default function CheckoutPage() {
     setLoading(true);
 
     try {
-      // DEBUG POINT 1
-      console.log("Checkout Initiated - Version 5.0");
-
       const rzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
       if (!rzpKey) {
-        alert("CRITICAL ERROR: Razorpay Key ID is missing (undefined)!");
-        throw new Error("Razorpay Key ID is missing!");
+        throw new Error("Razorpay Key ID missing. Add NEXT_PUBLIC_RAZORPAY_KEY_ID to Vercel.");
       }
 
+      // 1. Load Razorpay SDK
       const sdkLoaded = await loadRazorpay();
-      if (!sdkLoaded) {
-          alert("CRITICAL ERROR: Razorpay SDK failed to load!");
-          throw new Error("Razorpay SDK could not be loaded.");
-      }
+      if (!sdkLoaded) throw new Error("Failed to load Razorpay SDK.");
 
-      const response = await fetch("/api/orders", {
+      // 2. Create Order
+      const res = await fetch("/api/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          amount: total * 100, // paise
           items,
           address,
-          totalAmount: total,
-          paymentMethod: "razorpay"
+          totalAmount: total
         }),
       });
 
-      const orderData = await response.json();
-      if (!response.ok) {
-          alert("SERVER ERROR: " + (orderData.error || "Order creation failed"));
-          throw new Error(orderData.error || "Failed to create order on server.");
-      }
+      const orderData = await res.json();
+      if (!res.ok) throw new Error(orderData.error || "Failed to create order.");
 
-      if (!orderData.id || orderData.id.startsWith("COD-")) {
-          alert("DATABASE ERROR: Server returned a non-Razorpay ID: " + orderData.id);
-          throw new Error("Server failed to generate a Razorpay Order.");
-      }
-
+      // 3. Configure Checkout Options
       const options = {
         key: rzpKey,
         amount: orderData.amount,
         currency: orderData.currency,
         name: "Sipwar Coffee",
-        description: "Order #" + orderData.orderNumber,
-        order_id: orderData.id,
-        handler: async function (rzpRes: any) {
-          alert("PAYMENT RECEIVED! Now verifying...");
+        description: "Premium Coffee Order",
+        order_id: orderData.order_id,
+        handler: async function (response: any) {
           try {
-            const verifyRes = await fetch("/api/orders/verify", {
-               method: "POST",
-               headers: { "Content-Type": "application/json" },
-               body: JSON.stringify({
-                 razorpay_payment_id: rzpRes.razorpay_payment_id,
-                 razorpay_order_id: rzpRes.razorpay_order_id,
-                 razorpay_signature: rzpRes.razorpay_signature,
-                 dbOrderId: orderData.dbOrderId,
-               }),
+            // 4. Verify Payment
+            const verifyRes = await fetch("/api/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                dbOrderId: orderData.dbOrderId
+              }),
             });
+
             const verifyData = await verifyRes.json();
             if (verifyData.success) {
-              alert("VERIFICATION SUCCESS! Redirecting...");
               clearCart();
               router.push(`/order-success?orderId=${orderData.dbOrderId}&amount=${total}`);
             } else {
-              alert("VERIFICATION FAILED! " + verifyData.error);
+              alert("Payment verification failed. Please contact support.");
             }
-          } catch (vErr) {
-            alert("VERIFICATION SERVER CRASH!");
+          } catch (err) {
+            console.error("Verification error:", err);
+            alert("An error occurred during payment verification.");
           }
         },
         prefill: {
@@ -123,20 +112,19 @@ export default function CheckoutPage() {
         },
         theme: { color: "#3b2314" },
         modal: {
-          ondismiss: () => {
-            alert("Payment Modal Closed by User");
-            setLoading(false);
-          }
+          ondismiss: () => setLoading(false)
         }
       };
 
-      alert("READY! Opening Razorpay Modal now...");
       const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', (resp: any) => {
+        alert("Payment Failed: " + resp.error.description);
+      });
       rzp.open();
 
     } catch (err: any) {
-      console.error("Payment Step Error:", err);
-      alert("CATCH BLOCK ERROR: " + err.message);
+      console.error("Checkout Error:", err);
+      alert(err.message || "Failed to initialize payment.");
     } finally {
       setLoading(false);
     }

@@ -48,28 +48,71 @@ export default function CheckoutPage() {
     setLoading(true);
 
     try {
-      const result = await fetch("/api/orders", {
+      // 1. Load Razorpay Script
+      const isLoaded = await loadRazorpay();
+      if (!isLoaded) {
+        throw new Error("Razorpay SDK failed to load. Are you online?");
+      }
+
+      // 2. Create Order in our DB & Razorpay
+      const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items,
           address,
           totalAmount: total,
-          bypassPayment: true,
+          paymentMethod: "razorpay", // Explicitly request razorpay
         }),
       });
 
-      if (!result.ok) throw new Error("Could not construct order");
-      
-      const { dbOrderId } = await result.json();
+      const orderData = await res.json();
+      if (!res.ok) throw new Error(orderData.error || "Order creation failed");
 
-      // Bypass verification for now as requested
-      clearCart();
-      router.push(`/order-success?orderId=${dbOrderId}&amount=${total}`);
+      // 3. Open Razorpay Popup
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "", // Will be provided by user
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "Sipwar Coffee",
+        description: "Premium Coffee Order",
+        order_id: orderData.id,
+        handler: async function (response: any) {
+          // 4. Verify Payment on Server
+          const verifyRes = await fetch("/api/orders/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature,
+              dbOrderId: orderData.dbOrderId,
+            }),
+          });
+
+          const verifyData = await verifyRes.json();
+          if (verifyData.success) {
+            clearCart();
+            router.push(`/order-success?orderId=${orderData.dbOrderId}&amount=${total}`);
+          } else {
+            alert("Payment verification failed: " + verifyData.error);
+          }
+        },
+        prefill: {
+          name: address.fullName,
+          contact: address.phone,
+        },
+        theme: {
+          color: "#3b2314",
+        },
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.open();
 
     } catch (err) {
       console.error(err);
-      alert("Failed to initialize checkout.");
+      alert(err instanceof Error ? err.message : "Failed to initialize payment.");
     } finally {
       setLoading(false);
     }

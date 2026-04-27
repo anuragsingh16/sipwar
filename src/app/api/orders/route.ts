@@ -95,8 +95,9 @@ export async function POST(req: Request) {
         rzpOrderId = rzpOrder.id;
         amount = Number(rzpOrder.amount);
         currency = rzpOrder.currency;
-      } catch (rzpErr) {
-        console.error("Razorpay order creation failed, falling back to COD:", rzpErr);
+      } catch (rzpErr: any) {
+        console.error("Razorpay Error:", rzpErr);
+        return NextResponse.json({ error: "Razorpay order creation failed: " + rzpErr.message }, { status: 500 });
       }
     }
 

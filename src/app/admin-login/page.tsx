@@ -30,17 +30,10 @@ export default function AdminLoginPage() {
       return;
     }
 
-    // After signIn succeeds, check if user is admin via session
-    // Retrieve a fresh, un-cached session instead of risking Next.js' fetch cache
-    const session = await getSession();
-
-    if (session?.user?.role !== "admin") {
-      setError("Access denied. This login is for administrators only.");
-      setLoading(false);
-      return;
-    }
-
+    // If signIn is successful, redirect to admin dashboard immediately.
+    // The middleware (proxy.ts) will handle the role-based protection server-side.
     router.push("/admin");
+    router.refresh(); // Ensure the latest state is picked up
   };
 
   return (

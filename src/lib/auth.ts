@@ -68,10 +68,10 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user }: { token: any, user?: any }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role || "user";
+        token.role = user.role;
       }
       return token;
     },

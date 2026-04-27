@@ -32,7 +32,7 @@ if (!MONGODB_URI || MONGODB_URI.includes("YOUR_USER")) {
 
 // Dynamically import mongoose
 const { default: mongoose } = await import("mongoose");
-const { default: bcrypt } = await import("bcrypt");
+const { default: bcrypt } = await import("bcryptjs");
 
 const ADMIN_EMAIL    = "anuragrajput874@gmail.com";
 const ADMIN_PASSWORD = "123456";

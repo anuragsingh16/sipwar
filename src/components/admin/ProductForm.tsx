@@ -8,6 +8,7 @@ export default function ProductForm({ initialData = null }: { initialData?: any 
   const router = useRouter();
   const isEditing = !!initialData;
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
@@ -48,6 +49,37 @@ export default function ProductForm({ initialData = null }: { initialData?: any 
     const newVariants = [...formData.variants];
     newVariants.splice(index, 1);
     setFormData({ ...formData, variants: newVariants });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    
+    setUploading(true);
+    setError("");
+    
+    const formDataPayload = new FormData();
+    Array.from(e.target.files).forEach(file => {
+      formDataPayload.append("files", file);
+    });
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formDataPayload,
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      
+      const currentImages = formData.images ? formData.images.split("\n").filter(Boolean) : [];
+      const newImages = [...currentImages, ...data.urls];
+      
+      setFormData({ ...formData, images: newImages.join("\n") });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -168,10 +200,39 @@ export default function ProductForm({ initialData = null }: { initialData?: any 
 
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-6">
         <h2 className="text-lg font-bold text-gray-900 border-b pb-2">Images & Status</h2>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Image URLs (one per line)</label>
-          <textarea name="images" value={formData.images} onChange={handleChange} rows={3} placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg" className="w-full border rounded-lg px-4 py-2 text-sm font-mono whitespace-pre" />
+        
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Upload Images</label>
+            <div className="flex items-center gap-4">
+              <input 
+                type="file" 
+                multiple 
+                accept="image/*" 
+                onChange={handleImageUpload}
+                disabled={uploading}
+                className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#3b2314]/10 file:text-[#3b2314] hover:file:bg-[#3b2314]/20"
+              />
+              {uploading && <span className="text-sm text-gray-500 font-medium">Uploading...</span>}
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Or enter Image URLs manually (one per line)</label>
+            <textarea name="images" value={formData.images} onChange={handleChange} rows={4} placeholder="https://example.com/image1.jpg&#10;/uploads/products/image2.jpg" className="w-full border rounded-lg px-4 py-2 text-sm font-mono whitespace-pre" />
+          </div>
+          
+          {formData.images && (
+            <div className="flex gap-4 flex-wrap mt-2">
+              {formData.images.split("\n").filter(Boolean).map((url: string, i: number) => (
+                <div key={i} className="relative w-20 h-20 rounded-lg border overflow-hidden bg-gray-50">
+                  <img src={url} alt="preview" className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
         <div className="flex gap-6 pt-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" name="isActive" checked={formData.isActive} onChange={handleChange} className="w-4 h-4 accent-[#3b2314]" />

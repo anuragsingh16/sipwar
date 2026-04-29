@@ -78,9 +78,17 @@ export default function Footer() {
                   {label}
                 </a>
               ))}
-              <a href="mailto:hello@sipwar.in" aria-label="Email" className="w-10 h-10 bg-coffee-800 hover:bg-gold hover:text-coffee-950 text-coffee-300 rounded-full flex items-center justify-center transition-all">
+              <a href="mailto:anuragrajput874@gmail.com" aria-label="Email" className="w-10 h-10 bg-coffee-800 hover:bg-gold hover:text-coffee-950 text-coffee-300 rounded-full flex items-center justify-center transition-all">
                 <Mail className="w-4 h-4" />
               </a>
+            </div>
+            <div className="mt-4 space-y-1">
+              <p className="text-coffee-400 text-sm">
+                <strong className="text-coffee-300">Email:</strong> anuragrajput874@gmail.com
+              </p>
+              <p className="text-coffee-400 text-sm">
+                <strong className="text-coffee-300">Phone:</strong> +91 9557443131
+              </p>
             </div>
           </div>
 
@@ -107,7 +115,7 @@ export default function Footer() {
         <div className="border-t border-coffee-800 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-coffee-500">© 2025 Sipwar Coffee. All rights reserved. #IndianBrand</p>
           <div className="flex items-center gap-6">
-            {["Privacy Policy", "Terms of Service", "Shipping Policy"].map(t => (
+            {["Privacy Policy", "Terms of Service", "Shipping Policy", "Return Policy"].map(t => (
               <Link key={t} href="/about" className="text-xs text-coffee-500 hover:text-white transition-colors">{t}</Link>
             ))}
           </div>

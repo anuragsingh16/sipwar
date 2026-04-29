@@ -9,19 +9,36 @@ export default function Chatbot() {
     { sender: 'bot', text: 'Hi there! Welcome to Sipwar. I am SipBot, your AI coffee concierge. How can I help you discover the perfect brew today?' }
   ]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
     
-    // Add user message
-    setMessages(prev => [...prev, { sender: 'user', text: input }]);
+    const userMessage = input;
+    setMessages(prev => [...prev, { sender: 'user', text: userMessage }]);
     setInput('');
+    setIsLoading(true);
     
-    // Simulate bot response
-    setTimeout(() => {
-      setMessages(prev => [...prev, { sender: 'bot', text: "That sounds wonderful! Our Filter Coffee Arabica AA combines intense aroma with health benefits. You can find it right on our homepage or in the shop." }]);
-    }, 1000);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage })
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok && data.text) {
+        setMessages(prev => [...prev, { sender: 'bot', text: data.text }]);
+      } else {
+        setMessages(prev => [...prev, { sender: 'bot', text: "I'm sorry, I'm having trouble connecting right now." }]);
+      }
+    } catch (error) {
+      setMessages(prev => [...prev, { sender: 'bot', text: "I'm sorry, an error occurred." }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -48,11 +65,20 @@ export default function Chatbot() {
           <div className="flex-1 p-5 overflow-y-auto bg-coffee-50/30 flex flex-col gap-4 custom-scrollbar">
             {messages.map((msg, i) => (
               <div key={i} className={`flex max-w-[85%] ${msg.sender === 'user' ? 'self-end' : 'self-start'}`}>
-                <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.sender === 'user' ? 'bg-coffee-800 text-white rounded-br-sm' : 'bg-white border border-coffee-100 text-coffee-900 rounded-bl-sm'}`}>
+                <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.sender === 'user' ? 'bg-coffee-800 text-white rounded-br-sm' : 'bg-white border border-coffee-100 text-coffee-900 rounded-bl-sm whitespace-pre-wrap'}`}>
                   {msg.text}
                 </div>
               </div>
             ))}
+            {isLoading && (
+              <div className="flex max-w-[85%] self-start">
+                <div className="p-4 rounded-2xl text-sm leading-relaxed shadow-sm bg-white border border-coffee-100 text-coffee-900 rounded-bl-sm flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-coffee-300 rounded-full animate-bounce"></span>
+                  <span className="w-2 h-2 bg-coffee-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-2 h-2 bg-coffee-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Input area */}
@@ -65,7 +91,7 @@ export default function Chatbot() {
                 placeholder="Ask SipBot..." 
                 className="w-full bg-coffee-50 border border-coffee-200 rounded-full py-3 px-5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-coffee-400/50 focus:border-coffee-400 transition-all text-coffee-900 placeholder:text-coffee-300 font-medium"
               />
-              <button type="submit" disabled={!input.trim()} className="absolute right-1 w-10 h-10 bg-coffee-800 hover:bg-coffee-900 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:hover:bg-coffee-800 disabled:cursor-not-allowed border-[3px] border-white">
+              <button type="submit" disabled={!input.trim() || isLoading} className="absolute right-1 w-10 h-10 bg-coffee-800 hover:bg-coffee-900 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:hover:bg-coffee-800 disabled:cursor-not-allowed border-[3px] border-white">
                 <Send className="w-4 h-4 translate-x-[-1px] translate-y-[1px]" />
               </button>
             </form>

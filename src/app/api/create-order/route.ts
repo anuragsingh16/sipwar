@@ -98,9 +98,11 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
+    const fs = require('fs');
+    fs.writeFileSync('last-error.log', String(error?.stack || error));
     console.error("[create-order] Error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to create order" },
+      { error: (error?.error?.description || error?.message || String(error)) + " - check last-error.log" },
       { status: 500 }
     );
   }

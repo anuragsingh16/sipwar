@@ -14,6 +14,17 @@ import { Button } from "@/components/ui/button";
 export default function CheckoutPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
+
+  // Helper to load Razorpay script
+  const loadScript = (src: string) => {
+    return new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
   const { items, getTotals, clearCart } = useCartStore();
   const { subtotal } = getTotals();
   const shipping = subtotal < 500 ? 50 : 0;
@@ -54,6 +65,13 @@ export default function CheckoutPage() {
     setLoading(true);
     setPaymentError("");
 
+    const isScriptLoaded = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
+    if (!isScriptLoaded) {
+      setPaymentError("Razorpay SDK failed to load. Are you online?");
+      setLoading(false);
+      return;
+    }
+
     try {
       // 1. Create Razorpay order on backend
       const res = await fetch("/api/create-order", {
@@ -65,52 +83,60 @@ export default function CheckoutPage() {
       const orderData = await res.json();
       if (!res.ok) throw new Error(orderData.error || "Failed to create order.");
 
-      // 2. Clear cart immediately (payment is tracked by Razorpay order)
+      // 2. Clear cart since order is generated (though payment is pending)
       clearCart();
 
-      // 3. Redirect to Razorpay hosted checkout page
-      //    Build the form and submit it — Razorpay accepts POST redirect
-      const rzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!;
+      // 3. Initialize Razorpay Modal Options
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID, // Enter the Key ID generated from the Dashboard
+        amount: orderData.amount,
+        currency: orderData.currency || "INR",
+        name: "Sipwar Coffee",
+        description: "Premium Coffee Order",
+        order_id: orderData.order_id, // This is the order_id created in the backend
+        handler: async function (response: any) {
+          // 4. Verify payment signature on backend
+          try {
+            const verifyRes = await fetch("/api/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+                dbOrderId: orderData.dbOrderId,
+              }),
+            });
 
-      // Callback URL — Razorpay redirects browser here after payment
-      const callbackUrl = encodeURIComponent(
-        `${window.location.origin}/api/razorpay-callback?dbOrderId=${orderData.dbOrderId}&amount=${total}`
-      );
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) throw new Error(verifyData.error || "Verification failed");
 
-      // Razorpay hosted checkout URL
-      const redirectUrl = `https://api.razorpay.com/v1/checkout/embedded`;
-
-      // Build a hidden form and submit it
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = redirectUrl;
-
-      const fields: Record<string, string> = {
-        key_id:                rzpKey,
-        order_id:              orderData.order_id,
-        amount:                String(orderData.amount),
-        currency:              orderData.currency || "INR",
-        name:                  "Sipwar Coffee",
-        description:           "Premium Coffee Order",
-        prefill_name:          address.fullName,
-        prefill_contact:       address.phone,
-        "prefill[name]":       address.fullName,
-        "prefill[contact]":    address.phone,
-        callback_url:          decodeURIComponent(callbackUrl),
-        cancel_url:            `${window.location.origin}/checkout?error=payment_failed`,
+            // Redirect to success page
+            router.push(`/order-success?orderId=${orderData.orderNumber}`);
+          } catch (verErr: any) {
+            console.error("Verification error:", verErr);
+            router.push("/checkout?error=signature_mismatch");
+          }
+        },
+        prefill: {
+          name: address.fullName,
+          email: session?.user?.email || "",
+          contact: address.phone,
+        },
+        theme: {
+          color: "#3b2314",
+        },
       };
 
-      Object.entries(fields).forEach(([k, v]) => {
-        const input = document.createElement("input");
-        input.type  = "hidden";
-        input.name  = k;
-        input.value = v;
-        form.appendChild(input);
+      const paymentObject = new (window as any).Razorpay(options);
+      
+      paymentObject.on("payment.failed", function (response: any) {
+        console.error("Payment failed:", response.error.description);
+        router.push("/checkout?error=payment_failed");
       });
 
-      document.body.appendChild(form);
-      form.submit();
-
+      paymentObject.open();
+      setLoading(false); // Modal is open, stop loading spinner
     } catch (err: any) {
       console.error("Checkout Error:", err);
       setPaymentError(err.message || "Failed to initialize payment. Please try again.");

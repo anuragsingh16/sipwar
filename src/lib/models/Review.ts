@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
+import Product from './Product';
 
 export interface IReview extends Document {
   productId: mongoose.Types.ObjectId;
@@ -35,4 +36,43 @@ const ReviewSchema = new Schema<IReview>(
 
 ReviewSchema.index({ productId: 1, userId: 1 }, { unique: true });
 
-export default (mongoose.models.Review as Model<IReview>) || mongoose.model<IReview>('Review', ReviewSchema);
+ReviewSchema.statics.calcAverageRatings = async function (productId: mongoose.Types.ObjectId) {
+  const stats = await this.aggregate([
+    { $match: { productId } },
+    {
+      $group: {
+        _id: '$productId',
+        nRating: { $sum: 1 },
+        avgRating: { $avg: '$rating' }
+      }
+    }
+  ]);
+
+  if (stats.length > 0) {
+    await Product.findByIdAndUpdate(productId, {
+      reviewCount: stats[0].nRating,
+      avgRating: Math.round(stats[0].avgRating * 10) / 10 // round to 1 decimal
+    });
+  } else {
+    await Product.findByIdAndUpdate(productId, {
+      reviewCount: 0,
+      avgRating: 0
+    });
+  }
+};
+
+ReviewSchema.post('save', function () {
+  (this.constructor as any).calcAverageRatings(this.productId);
+});
+
+ReviewSchema.post('findOneAndDelete', async function (doc) {
+  if (doc) {
+    await (doc.constructor as any).calcAverageRatings(doc.productId);
+  }
+});
+
+export interface IReviewModel extends Model<IReview> {
+  calcAverageRatings(productId: mongoose.Types.ObjectId): Promise<void>;
+}
+
+export default (mongoose.models.Review as IReviewModel) || mongoose.model<IReview, IReviewModel>('Review', ReviewSchema);

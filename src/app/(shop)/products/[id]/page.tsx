@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { Star, Minus, Plus, ShoppingCart, Award, Leaf, Package, ArrowLeft, Heart, Truck } from "lucide-react";
 import { useCartStore } from "@/lib/store/cartStore";
 import { useSession } from "next-auth/react";
+import ProductReviews from "@/components/products/ProductReviews";
 
 const PRODUCTS: Record<string, {
   id: string; name: string; origin: string; roast: string; process: string;
@@ -407,6 +408,14 @@ export default function ProductDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Reviews Section */}
+        {/* We use a valid ObjectId string for testing if the id is a short string like "1" */}
+        <ProductReviews 
+          productId={product.id.length < 24 ? product.id.padStart(24, '0') : product.id} 
+          initialAvgRating={product.rating} 
+          initialReviewCount={product.reviews} 
+        />
 
         {/* Back link */}
         <div className="mt-16 border-t border-coffee-100 pt-10">
